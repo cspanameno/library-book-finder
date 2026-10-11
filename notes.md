@@ -113,3 +113,8 @@ Design rule: the AI recommends, the library decides.
   Needs a test.
 
 Fixed: Brown Bear now FOUND (On the shelf). Search uses title + last name.
+
+Step A probes: "dragones" (Spanish + children's filters) = 65 entries, ~15s.
+"fútbol" = 49 entries, ~3s. Unfiltered "dragones" = 300 cap, 46s.
+ps= page size is ignored. Accents don't matter. Filters hide Libby
+(fine, Spanish is shelf-only by my choice). English filter (ENG) works too.

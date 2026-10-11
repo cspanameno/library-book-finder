@@ -98,3 +98,63 @@ def test_audio_disc_is_dropped_but_print_copy_further_down_is_kept():
     assert [(i.kind, i.format) for i in brown_bears] == [("shelf", "Books")]
     assert brown_bears[0].item_id == "ent://SD_ILS/0/SD_ILS:336001"
     assert all(i.format != "Audio disc" for i in items)
+
+
+# --- call number and ISBN ---
+
+def test_shelf_item_has_call_number_and_isbn():
+    item = by_title(load("physical_dragons_love_tacos.xml"))["Dragons love tacos"]
+    assert item.call_number == "RUBIN"
+    assert item.isbns == ("9780803736801",)
+
+
+def test_item_can_list_several_isbns():
+    item = by_title(load("physical_dragons_love_tacos.xml"))["Dragones y tacos 2 : la continuación"]
+    assert item.isbns == ("9780451479204", "9781549096617", "9780606413176", "9781518282577")
+
+
+def test_libby_items_have_no_call_number_or_isbn():
+    items = load("libby_wild_robot.xml")
+    libby = [i for i in items if i.kind == "libby"]
+    assert libby
+    assert all(i.call_number == "" and i.isbns == () for i in libby)
+
+
+def test_call_number_can_be_just_an_isbn():
+    items = load("spanish_children_dragones.xml")
+    first = by_title(items)["Los dragones adoran los calzoncillos"]
+    assert first.call_number == "9788491458173"
+    assert first.isbns == ("9788491458173",)
+
+
+def test_spanish_call_numbers_keep_their_full_text():
+    items = load("spanish_children_dragones.xml")
+    assert "J SPA 920 BROOKS 2018" in {i.call_number for i in items}
+
+
+def test_missing_call_number_and_isbn_default_to_empty():
+    xml = (
+        '<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>T</title>'
+        "<id>ent://SD_ILS/0/SD_ILS:1</id>"
+        "<content>by&amp;#160;A, B&lt;br/&gt;Format:&amp;#160;Books&lt;br/&gt;</content></entry></feed>"
+    )
+    (item,) = parse_feed(xml)
+    assert (item.call_number, item.isbns) == ("", ())
+
+
+# --- the filtered Spanish children's feeds ---
+
+@pytest.mark.parametrize("name, kept", [
+    ("spanish_children_dragones.xml", 58),   # 65 entries: 7 video discs dropped
+    ("spanish_children_futbol.xml", 48),     # 49 entries: 1 "Other" dropped
+])
+def test_filtered_spanish_feed_keeps_only_books(name, kept):
+    items = load(name)
+    assert len(items) == kept
+    assert {(i.kind, i.format) for i in items} == {("shelf", "Books")}
+    assert all(i.call_number and i.isbns and i.author for i in items)
+
+
+def test_filtered_feed_has_no_libby_items():
+    for name in ("spanish_children_dragones.xml", "spanish_children_futbol.xml"):
+        assert not any(i.kind == "libby" for i in load(name))

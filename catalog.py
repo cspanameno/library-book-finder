@@ -17,6 +17,8 @@ class CatalogItem:
     item_id: str
     format: str  # e.g. "Books", "eBook", "eAudiobook"
     kind: str  # "shelf" (physical book) or "libby" (ebook/audiobook)
+    call_number: str = ""  # shelf items only; sometimes just the ISBN
+    isbns: tuple = ()  # one book can list several (editions, formats)
 
 
 def _clean(text):
@@ -47,7 +49,7 @@ def parse_feed(xml_text):
     for entry in root.findall(f"{ATOM}entry"):
         title = _clean(entry.findtext(f"{ATOM}title", ""))
         item_id = (entry.findtext(f"{ATOM}id") or "").strip()
-        author, fmt = "", ""
+        author, fmt, call_number, isbns = "", "", "", ()
         content = entry.findtext(f"{ATOM}content", "")
         for line in content.split("<br/>"):
             line = _clean(line)
@@ -55,7 +57,11 @@ def parse_feed(xml_text):
                 author = line[3:].strip()
             elif line.startswith("Format:"):
                 fmt = line[len("Format:"):].strip()
+            elif line.startswith("Call Number "):
+                call_number = line[len("Call Number "):].strip()
+            elif line.startswith("ISBN "):
+                isbns = tuple(line[len("ISBN "):].split())
         kind = _kind(item_id, fmt)
         if kind and title:
-            items.append(CatalogItem(title, author, item_id, fmt, kind))
+            items.append(CatalogItem(title, author, item_id, fmt, kind, call_number, isbns))
     return items
