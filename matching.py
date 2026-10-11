@@ -55,6 +55,12 @@ def _last_name(person):
     return words[-1] if words else ""
 
 
+def primary_last_name(author):
+    """Folded last name of the first person listed, e.g. "rubin" for
+    "Rubin, Adam/ Salmieri, Daniel (ILT)". Used to tell books apart."""
+    return _last_name(author.split("/", 1)[0])
+
+
 def author_matches(candidate_author, catalog_author):
     """True if the candidate's last name is one of the catalog's authors.
 
