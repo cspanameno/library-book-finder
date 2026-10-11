@@ -111,3 +111,5 @@ Design rule: the AI recommends, the library decides.
 - Possible risk: ignoring subtitles after a colon could make
   "Pete the Cat: I Love My White Shoes" match any Pete the Cat book.
   Needs a test.
+
+Fixed: Brown Bear now FOUND (On the shelf). Search uses title + last name.

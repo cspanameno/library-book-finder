@@ -4,6 +4,8 @@ Run from the project root:
   python scripts/try_haiku.py           # print Haiku's suggestions
   python scripts/try_haiku.py --check   # also check them against the real catalog
   python scripts/try_haiku.py --check --all   # check all of them, not just until 5 are found
+  python scripts/try_haiku.py --title "Brown Bear, Brown Bear, What Do You See?" --author "Bill Martin Jr."
+                                        # skip Haiku: look up one book (no API key needed)
 
 Reads the API key from .streamlit/secrets.toml and never prints it.
 Prints only titles, authors, languages, and catalog results.
@@ -21,7 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 logging.disable(logging.WARNING)  # hide streamlit's "no runtime found" warning on import
-from lookup import CatalogUnavailable, lookup_book  # noqa: E402
+from lookup import CatalogUnavailable, feed_url, lookup_book  # noqa: E402
 logging.disable(logging.NOTSET)
 from suggest import Request, SuggestionError, api_key_from, make_client, suggest_books  # noqa: E402
 
@@ -64,15 +66,38 @@ def check_catalog(candidates, check_all=False):
     print(f"\n{found} found out of {checked} checked ({len(candidates)} suggested)")
 
 
+def check_one(title, author):
+    """One book straight through the library lookup. No Haiku, no API key."""
+    print(f"Catalog request: {feed_url(title, author)}")
+    try:
+        availability = lookup_book(title, author)
+    except CatalogUnavailable:
+        print("Catalog unavailable.")
+        return 1
+    if availability.found:
+        print(f"FOUND   {title} | {author}\n        {badges(availability)}  {availability.search_url}")
+    else:
+        print(f"no      {title} | {author}\n        {availability.search_url}")
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--check", action="store_true",
                         help="check the suggestions against the real library catalog")
     parser.add_argument("--all", action="store_true",
                         help="with --check, check every suggestion instead of stopping at 5 (testing only)")
+    parser.add_argument("--title", help="skip Haiku: look up this one book (needs --author)")
+    parser.add_argument("--author", help="skip Haiku: author for --title, e.g. \"Bill Martin Jr.\"")
     args = parser.parse_args()
     if args.all and not args.check:
         parser.error("--all only works together with --check")
+    if bool(args.title) != bool(args.author):
+        parser.error("--title and --author go together")
+    if args.title and (args.check or args.all):
+        parser.error("--title/--author can't be combined with --check or --all")
+    if args.title:
+        return check_one(args.title, args.author)
 
     try:
         with open(SECRETS, "rb") as f:
