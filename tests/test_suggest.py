@@ -123,7 +123,8 @@ def test_prompt_for_one_language_mentions_only_that_level():
     prompt = suggest.build_user_prompt(REQUEST)
     assert "Reading level in English: grade equivalent 1.5" in prompt
     assert "Spanish" not in prompt
-    assert "15 different books, all in English" in prompt
+    assert "up to 15 different books, all in English" in prompt
+    assert "Suggest fewer if you are not confident" in prompt
 
 
 def test_prompt_for_both_languages_uses_each_level():
@@ -145,6 +146,30 @@ def test_interests_are_wrapped_as_data_and_cannot_close_the_tag():
 def test_interests_are_cut_to_200_characters():
     assert len(suggest.clean_interests("a" * 500)) == 200
     assert suggest.clean_interests(None) == ""
+
+
+def test_system_prompt_asks_for_confident_well_known_books_only():
+    prompt = suggest.SYSTEM_PROMPT
+    assert "fewer books is better than guessing" in prompt
+    assert "award winners, classics, and popular series" in prompt
+
+
+def test_system_prompt_treats_interests_as_any_of_them():
+    assert "matches any of them" in suggest.SYSTEM_PROMPT
+    assert "not need to match all" in suggest.SYSTEM_PROMPT
+
+
+def test_system_prompt_prefers_original_spanish_or_known_translations():
+    prompt = suggest.SYSTEM_PROMPT
+    assert "originally published in Spanish" in prompt
+    assert "well-known Spanish translations" in prompt
+    assert "Never translate a title yourself" in prompt
+
+
+def test_fewer_than_the_maximum_is_accepted_without_retry():
+    client = FakeClient(tool_response([book(), book(title="Another Book")]))
+    assert len(suggest_books(REQUEST, client)) == 2
+    assert len(client.calls) == 1
 
 
 # --- API key ---
