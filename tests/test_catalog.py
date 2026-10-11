@@ -88,3 +88,13 @@ def test_malformed_xml_raises():
 def test_non_feed_response_raises():
     with pytest.raises(CatalogParseError):
         parse_feed("<html>Service unavailable</html>")
+
+
+# --- Brown Bear: print copy sits below an "Audio disc" (CD + book) entry ---
+
+def test_audio_disc_is_dropped_but_print_copy_further_down_is_kept():
+    items = load("brown_bear_query_without_jr.xml")
+    brown_bears = [i for i in items if i.title.lower() == "brown bear, brown bear, what do you see?"]
+    assert [(i.kind, i.format) for i in brown_bears] == [("shelf", "Books")]
+    assert brown_bears[0].item_id == "ent://SD_ILS/0/SD_ILS:336001"
+    assert all(i.format != "Audio disc" for i in items)
