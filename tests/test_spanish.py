@@ -348,3 +348,112 @@ def test_real_pool_prompt_is_a_reasonable_size():
     prompt = spanish.build_pick_prompt(REQ, real_pool())
     assert prompt.count("\n") < 100
     assert len(prompt) < 20000
+
+
+# ===========================================================================
+# The whole flow: find_spanish_books
+
+from lookup import CatalogUnavailable
+from spanish import find_spanish_books
+
+
+def flow_client(words=("dragones", "fútbol"), picks=("B1",)):
+    return FakeClient(words_response(list(words)), picks_response([pick(p) for p in picks]))
+
+
+def fake_search(by_word, calls=None):
+    def search(word):
+        if calls is not None:
+            calls.append(word)
+        result = by_word[word]
+        if isinstance(result, Exception):
+            raise result
+        return result
+    return search
+
+
+BOOKS_A = [item(f"Dragon {i}", f"Autor{i}, A.", i) for i in range(1, 4)]
+BOOKS_B = [item(f"Balon {i}", f"Escritor{i}, E.", 100 + i) for i in range(1, 4)]
+
+
+def test_whole_flow_runs_words_then_searches_then_picks():
+    client = flow_client(picks=("B1", "B2"))
+    calls = []
+    result = find_spanish_books(REQ, client, search=fake_search({"dragones": BOOKS_A, "fútbol": BOOKS_B}, calls))
+    assert calls == ["dragones", "fútbol"]
+    assert len(client.calls) == 2                       # one call for words, one for picks
+    assert client.calls[0]["tools"][0]["name"] == "spanish_search_words"
+    assert client.calls[1]["tools"][0]["name"] == "pick_books"
+    assert result.words == ("dragones", "fútbol")
+    assert result.found_per_word == {"dragones": 3, "fútbol": 3}
+    assert len(result.pool) == 6 and result.failed_words == ()
+    assert [p.book.item.title for p in result.picks] == ["Dragon 1", "Balon 1"]
+
+
+def test_the_pick_call_sees_exactly_the_pool_the_searches_returned():
+    client = flow_client(picks=("B1",))
+    find_spanish_books(REQ, client, search=fake_search({"dragones": BOOKS_A, "fútbol": BOOKS_B}))
+    prompt = client.calls[1]["messages"][0]["content"]
+    assert "Dragon 1" in prompt and "Balon 3" in prompt
+    assert "Spanish reading level: grade equivalent 3.0" in prompt
+
+
+def test_progress_messages_name_each_step_and_word():
+    messages = []
+    find_spanish_books(REQ, flow_client(), search=fake_search({"dragones": BOOKS_A, "fútbol": BOOKS_B}),
+                       progress=messages.append)
+    assert messages == ["Choosing what to search for…",
+                        "Searching the Spanish shelves for “dragones”…",
+                        "Searching the Spanish shelves for “fútbol”…",
+                        "Choosing books…"]
+
+
+def test_one_failed_search_still_uses_the_other():
+    result = find_spanish_books(REQ, flow_client(), search=fake_search(
+        {"dragones": CatalogUnavailable("Timeout"), "fútbol": BOOKS_B}))
+    assert result.failed_words == ("dragones",)
+    assert result.found_per_word == {"fútbol": 3}
+    assert len(result.pool) == 3
+
+
+def test_every_search_failing_raises_without_the_pick_call():
+    client = flow_client()
+    with pytest.raises(CatalogUnavailable):
+        find_spanish_books(REQ, client, search=fake_search(
+            {"dragones": CatalogUnavailable("Timeout"), "fútbol": CatalogUnavailable("Timeout")}))
+    assert len(client.calls) == 1
+
+
+def test_no_catalog_results_means_no_picks_and_no_pick_call():
+    client = FakeClient(words_response(["dragones"]))
+    result = find_spanish_books(REQ, client, search=fake_search({"dragones": []}))
+    assert result.picks == [] and len(result.pool) == 0
+    assert len(client.calls) == 1
+
+
+def test_empty_interests_stop_before_any_search():
+    calls = []
+    with pytest.raises(SuggestionError):
+        find_spanish_books(Request("1", {"Spanish": 3.0}, "  "), FakeClient(), search=fake_search({}, calls))
+    assert calls == []
+
+
+def test_a_request_without_a_spanish_level_is_rejected():
+    with pytest.raises(ValueError):
+        find_spanish_books(Request("1", {"English": 2.0}, "dragons"), FakeClient(), search=fake_search({}))
+
+
+def test_by_default_the_searches_are_cached(monkeypatch):
+    import lookup
+    calls = []
+    monkeypatch.setattr(lookup.requests, "get", lambda url, headers, timeout: calls.append(url) or SimpleNamespace(
+        content=(FIXTURES / "spanish_children_dragones.xml").read_bytes(), raise_for_status=lambda: None))
+    monkeypatch.setattr(lookup, "_last_request_at", None)
+    monkeypatch.setattr(lookup.time, "sleep", lambda s: None)
+    lookup._cached_spanish_search.clear()
+    try:
+        find_spanish_books(REQ, flow_client(words=("dragones",)))
+        find_spanish_books(REQ, flow_client(words=("dragones",)))
+    finally:
+        lookup._cached_spanish_search.clear()
+    assert len(calls) == 1

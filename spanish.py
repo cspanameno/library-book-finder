@@ -6,7 +6,8 @@ from dataclasses import dataclass
 
 import anthropic
 
-from pool import PoolBook
+from lookup import CatalogUnavailable, cached_spanish_search
+from pool import PoolBook, build_pool
 from suggest import MODEL, SuggestionError, clean_interests
 
 MAX_SEARCH_WORDS = 2  # each search can take 15s+, so two words bound the wait
@@ -236,3 +237,51 @@ def pick_spanish_books(request, pool, client):
         except ValueError:
             continue
     raise SuggestionError("Couldn't choose books from the library list. Please try again.")
+
+
+# ---------------------------------------------------------------------------
+# The whole Spanish flow: interests -> search words -> catalog -> pool -> picks.
+
+@dataclass(frozen=True)
+class SpanishResult:
+    words: tuple  # the search words Haiku chose
+    found_per_word: dict  # word -> how many catalog books its search returned
+    failed_words: tuple  # words whose catalog search failed (the others were still used)
+    pool: object  # the Pool Haiku chose from
+    picks: list  # up to 5 Picks; [] if nothing fit
+
+
+def find_spanish_books(request, client, search=cached_spanish_search, progress=None):
+    """Run the catalog-first Spanish flow. Two Haiku calls and one catalog search per word.
+
+    `search(word)` returns that word's catalog books (cached in the app).
+    `progress(message)` is told what is happening, for a spinner.
+    Raises SuggestionError (Haiku trouble) or CatalogUnavailable (every search failed).
+    """
+    if "Spanish" not in request.levels:
+        raise ValueError("The request needs a Spanish reading level")
+    say = progress or (lambda message: None)
+
+    say("Choosing what to search for…")
+    words = spanish_search_words(request.interests, client)
+
+    results, failed = {}, []
+    for word in words:
+        say(f"Searching the Spanish shelves for \u201c{word}\u201d…")
+        try:
+            results[word] = search(word)
+        except CatalogUnavailable:
+            failed.append(word)
+    if not results:
+        raise CatalogUnavailable("Every search failed")
+
+    pool = build_pool(results)
+    say("Choosing books…")
+    picks = pick_spanish_books(request, pool, client)
+    return SpanishResult(
+        words=tuple(words),
+        found_per_word={word: len(items) for word, items in results.items()},
+        failed_words=tuple(failed),
+        pool=pool,
+        picks=picks,
+    )
