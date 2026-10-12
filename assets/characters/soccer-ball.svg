@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+<defs><clipPath id="ballclip"><circle cx="100" cy="100" r="66"/></clipPath></defs>
+<circle cx="100" cy="100" r="66" fill="#fff"/>
+<g clip-path="url(#ballclip)" stroke="#35405a" stroke-width="3.5" stroke-linejoin="round" fill="#35405a">
+<polygon points="100,22 115,34 110,52 90,52 85,34"/>
+<polygon points="162,76 172,92 162,108 145,102 146,84"/>
+<polygon points="38,76 28,92 38,108 55,102 54,84"/>
+<polygon points="84,172 79,157 92,148 108,148 121,157 116,172"/>
+<path d="M90 52L78 70M110 52L122 70M146 84L132 90M54 84L68 90M145 102L134 130M55 102L66 130M92 148L84 134M108 148L116 134" fill="none"/>
+</g>
+<circle cx="100" cy="100" r="66" fill="none" stroke="#35405a" stroke-width="4.5"/>
+<ellipse cx="85" cy="96" rx="5.5" ry="8" fill="#35405a"/><ellipse cx="115" cy="96" rx="5.5" ry="8" fill="#35405a"/>
+<circle cx="86.6" cy="93" r="2" fill="#fff"/><circle cx="116.6" cy="93" r="2" fill="#fff"/>
+<path d="M84 114Q100 128 116 114" fill="none" stroke="#35405a" stroke-width="3.5" stroke-linecap="round"/>
+<circle cx="72" cy="110" r="6" fill="#FF9FB0" opacity=".8"/><circle cx="128" cy="110" r="6" fill="#FF9FB0" opacity=".8"/>
+<g fill="none" stroke="#35405a" stroke-width="3.5" stroke-linecap="round" opacity=".7"><path d="M20 62Q8 98 22 138"/><path d="M10 80Q4 100 12 122"/></g>
+</svg>

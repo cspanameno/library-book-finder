@@ -1,0 +1,8 @@
+# Light theme so the background looks the same on every phone and laptop
+# (no secrets in this file; the API key lives in secrets.toml).
+[theme]
+base = "light"
+primaryColor = "#C9402F"
+backgroundColor = "#FFF8EC"
+secondaryBackgroundColor = "#FFEFD6"
+textColor = "#35405A"

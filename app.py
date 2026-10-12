@@ -7,6 +7,7 @@ from finder import CATALOG_DOWN, NO_RESULTS, find_books
 from form import GRADES, LANGUAGE_CHOICES, validate_form
 from lookup import CatalogUnavailable
 from suggest import MissingApiKey, SuggestionError, api_key_from, make_client
+from theme import apply_background
 from topics import BY_KEY, MAX_TOPICS, TOPICS
 
 LIBRARY_CATALOG = "https://sanle.ent.sirsi.net/client/en_US/default/"
@@ -66,6 +67,8 @@ def show_results(request):
         count = len(result.books)
         st.caption(f"We found {count} book{'s' if count != 1 else ''} at the library that fit.")
 
+
+apply_background()
 
 st.title("Library Book Finder")
 st.write("Find books at the San Leandro Public Library that match your child's reading level.")

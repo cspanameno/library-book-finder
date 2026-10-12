@@ -289,3 +289,12 @@ def test_unexpected_errors_show_a_plain_message_and_never_the_input(monkeypatch)
     at = search(fill(start()))
     assert texts(at.error) == ["Something went wrong. Please try again."]
     assert "secretword" not in " ".join(texts(at.error)) and not at.exception
+
+
+# --- the background ---
+
+def test_the_page_carries_the_background_styles_but_no_visible_clutter():
+    at = start()
+    style = [m.value for m in at.markdown if "<style>" in m.value]
+    assert len(style) == 1 and "data:image/svg+xml;base64," in style[0]
+    assert "stMainBlockContainer" in style[0]
