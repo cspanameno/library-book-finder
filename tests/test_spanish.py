@@ -64,7 +64,7 @@ def test_spanish_letters_are_allowed():
     assert parse_search_words({"words": ["niños", "pingüinos"]}) == ["niños", "pingüinos"]
 
 
-@pytest.mark.parametrize("bad", [None, [], "dragones", {}, {"words": "dragones"}, {"words": []},
+@pytest.mark.parametrize("bad", [None, [], "dragones", {}, {"words": "dragones"},
                                  {"words": ["two words", "123"]}])
 def test_nothing_usable_raises(bad):
     with pytest.raises(ValueError):
@@ -91,7 +91,7 @@ def test_bad_output_is_retried_once_then_succeeds():
 
 
 def test_bad_output_twice_raises_after_exactly_two_calls():
-    client = FakeClient(words_response([]), words_response(["123"]))
+    client = FakeClient(words_response(["12 3"]), words_response(["123"]))
     with pytest.raises(SuggestionError):
         spanish_search_words("dragons", client)
     assert len(client.calls) == 2
@@ -457,3 +457,30 @@ def test_by_default_the_searches_are_cached(monkeypatch):
     finally:
         lookup._cached_spanish_search.clear()
     assert len(calls) == 1
+
+
+def test_reason_may_name_only_the_interests_the_book_matches():
+    prompt = spanish.PICK_SYSTEM_PROMPT
+    assert "name only the interests that book actually matches" in prompt
+    assert "do not claim it fits the others" in prompt
+    reason_help = spanish.PICK_TOOL["input_schema"]["properties"]["picks"]["items"]["properties"]["reason"]["description"]
+    assert "Name only the interests this book actually matches" in reason_help
+
+
+def test_an_empty_word_list_means_nothing_to_search_for_and_is_not_retried():
+    assert parse_search_words({"words": []}) == []
+    client = FakeClient(words_response([]))
+    assert spanish_search_words("asdfghjkl", client) == []
+    assert len(client.calls) == 1
+
+
+def test_words_prompt_allows_an_empty_list_for_senseless_interests():
+    assert "return an empty list" in spanish.WORDS_SYSTEM_PROMPT
+
+
+def test_whole_flow_with_no_search_words_returns_no_picks_and_searches_nothing():
+    calls = []
+    client = FakeClient(words_response([]))
+    result = find_spanish_books(REQ, client, search=fake_search({}, calls))
+    assert calls == [] and result.words == () and result.picks == [] and len(result.pool) == 0
+    assert len(client.calls) == 1

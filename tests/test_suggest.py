@@ -63,7 +63,7 @@ def test_parse_drops_unusable_entries(bad):
     assert [c.title for c in result] == ["Good One"]
 
 
-@pytest.mark.parametrize("bad", [None, [], "text", {}, {"books": "nope"}, {"books": []}, {"books": [{"title": "x"}]}])
+@pytest.mark.parametrize("bad", [None, [], "text", {}, {"books": "nope"}, {"books": [{"title": "x"}]}])
 def test_parse_rejects_when_nothing_usable(bad):
     with pytest.raises(ValueError):
         parse_candidates(bad)
@@ -83,7 +83,7 @@ def test_success_makes_one_call_with_forced_tool():
 
 
 def test_bad_output_is_retried_once_then_succeeds():
-    client = FakeClient(tool_response([]), tool_response([book()]))
+    client = FakeClient(tool_response([{"title": "x"}]), tool_response([book()]))
     assert suggest_books(REQUEST, client)
     assert len(client.calls) == 2
 
@@ -195,3 +195,22 @@ def test_missing_key_gives_setup_message():
     with pytest.raises(MissingApiKey) as raised:
         suggest.make_client(None)
     assert ".streamlit/secrets.toml" in str(raised.value)
+
+
+def test_an_empty_list_means_nothing_to_suggest_and_is_not_retried():
+    assert parse_candidates({"books": []}) == []
+    client = FakeClient(tool_response([]))
+    assert suggest_books(REQUEST, client) == []
+    assert len(client.calls) == 1
+
+
+def test_english_reason_may_name_only_the_interests_the_book_matches():
+    prompt = suggest.SYSTEM_PROMPT
+    assert "name only the interests that book actually matches" in prompt
+    assert "do not claim it fits the others" in prompt
+    reason_help = suggest.TOOL["input_schema"]["properties"]["books"]["items"]["properties"]["reason"]["description"]
+    assert "Name only the interests this book actually matches" in reason_help
+
+
+def test_english_prompt_allows_an_empty_list_for_senseless_interests():
+    assert "return an empty list" in suggest.SYSTEM_PROMPT

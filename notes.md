@@ -120,4 +120,9 @@ ps= page size is ignored. Accents don't matter. Filters hide Libby
 (fine, Spanish is shelf-only by my choice). English filter (ENG) works too
 
 
-Error messages never include the search word, because it comes from the child’s interests..
+Error messages never include the search word, because it comes from the child’s interests.
+
+Run 5 — catalog-first Spanish flow: 5/5 real books on the shelf (was 0/6).
+$0.006 per run. "dragones" 15.1s, "fútbol" 2.8s.
+Haiku still wrote one wrong reason: said a dragon book matched soccer too.
+The books are verified. The reasons are not..
