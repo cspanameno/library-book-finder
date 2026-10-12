@@ -6,7 +6,8 @@ from display import level_text, md_escape
 from finder import CATALOG_DOWN, NO_RESULTS, find_books
 from form import GRADES, LANGUAGE_CHOICES, validate_form
 from lookup import CatalogUnavailable
-from suggest import MAX_INTERESTS_CHARS, MissingApiKey, SuggestionError, api_key_from, make_client
+from suggest import MissingApiKey, SuggestionError, api_key_from, make_client
+from topics import BY_KEY, MAX_TOPICS, TOPICS
 
 LIBRARY_CATALOG = "https://sanle.ent.sirsi.net/client/en_US/default/"
 SOMETHING_WENT_WRONG = "Something went wrong. Please try again."
@@ -81,14 +82,18 @@ for language in LANGUAGE_CHOICES[language_choice]:
     )
 st.caption("Check your child's Star report for Grade Equiv.")
 
-interests = st.text_input(
-    "What does your child like?", max_chars=MAX_INTERESTS_CHARS,
-    placeholder="e.g. dragons, soccer, animals",
+topics = st.pills(
+    f"What does your child like? Pick 1 or {MAX_TOPICS}.",
+    options=[topic.key for topic in TOPICS],
+    format_func=lambda key: BY_KEY[key].label,
+    selection_mode="multi",
+    key="topics",
 )
-st.caption("Don't enter your child's name.")
+if len(topics or []) > MAX_TOPICS:
+    st.caption(f":red[Please pick up to {MAX_TOPICS} topics.]")
 
 if st.button("Find books", type="primary"):
-    request, errors = validate_form(grade, language_choice, levels, interests)
+    request, errors = validate_form(grade, language_choice, levels, topics)
     if errors:
         for message in errors:
             st.error(message)

@@ -7,7 +7,8 @@ Run from the project root:
   python scripts/try_haiku.py --title "Brown Bear, Brown Bear, What Do You See?" --author "Bill Martin Jr."
                                         # skip Haiku: look up one book (no API key needed)
   python scripts/try_haiku.py --spanish # the catalog-first Spanish flow, start to finish
-  python scripts/try_haiku.py --spanish --interests "dinosaurs and music" --spanish-level 2.5
+  python scripts/try_haiku.py --spanish --topics space robots --spanish-level 2.5
+  python scripts/try_haiku.py --topics-check   # test every topic's Spanish word on the real catalog
 
 Reads the API key from .streamlit/secrets.toml and never prints it.
 Prints titles, authors, catalog results, and how many Haiku tokens were used.
@@ -16,9 +17,16 @@ Prints titles, authors, catalog results, and how many Haiku tokens were used.
 between requests, and it stops once 5 books are found. --all is for testing
 only: it checks every suggestion (up to 15 requests), which the app never does.
 
---spanish makes 2 Haiku calls (search words, then picks) and 1 to 2 catalog
-searches (each can take 15+ seconds). It uses the real code path the app will
-use, except the 24-hour cache, so every run asks the library again.
+--spanish makes 1 Haiku call (the picks) and 1 to 2 catalog searches, one per
+topic's fixed Spanish word (each can take 15+ seconds). It uses the real code
+path the app uses, except the 24-hour cache, so every run asks the library again.
+Topics: any of the keys in topics.py, at most 2.
+
+--topics-check needs no API key. It searches the catalog once for each of the
+14 topic words, 3 seconds apart, and prints how many books and how long each
+took, flagging words that are slow (over 25 seconds, close to the app's 30 second
+limit) or return few books. Run it after changing the topics, or now and then,
+because the catalog changes.
 """
 import argparse
 import logging
@@ -32,8 +40,10 @@ sys.path.insert(0, str(ROOT))
 logging.disable(logging.WARNING)  # hide streamlit's "no runtime found" warning on import
 from lookup import CatalogUnavailable, feed_url, lookup_book, search_spanish_children  # noqa: E402
 logging.disable(logging.NOTSET)
+from pool import book_key  # noqa: E402
 from spanish import PICK_TOOL_NAME, find_spanish_books  # noqa: E402
 from suggest import Request, SuggestionError, api_key_from, make_client, suggest_books  # noqa: E402
+from topics import MAX_TOPICS, TOPICS, english_phrase, spanish_words  # noqa: E402
 
 SECRETS = ROOT / ".streamlit" / "secrets.toml"
 WANTED = 5
@@ -44,6 +54,8 @@ TEST_PROFILE = Request(
 )
 # claude-haiku-4-5 list prices, dollars per million tokens (an estimate for this script only).
 INPUT_PRICE, OUTPUT_PRICE = 1.0, 5.0
+SLOW_SECONDS, FEW_BOOKS, WORD_SPACING_SECONDS = 25, 15, 3
+DEFAULT_TOPICS = ["dragons", "soccer"]
 
 
 class RecordingClient:
@@ -137,9 +149,32 @@ def haiku_pick_ids(recorder):
     return ids
 
 
-def run_spanish(recorder, interests, level):
-    request = Request(grade=TEST_PROFILE.grade, levels={"Spanish": level}, interests=interests)
-    print(f"Profile: grade {request.grade}, Spanish level {level}, interests “{interests}”\n")
+def run_topics_check():
+    """Search the real catalog once for each topic's Spanish word and print a table."""
+    print(f"{'topic':12} {'word':12} {'books':>5}  {'seconds':>7}  notes")
+    for number, topic in enumerate(TOPICS):
+        if number:
+            time.sleep(WORD_SPACING_SECONDS)
+        started = time.monotonic()
+        try:
+            items = search_spanish_children(topic.spanish_word)
+        except CatalogUnavailable:
+            print(f"{topic.key:12} {topic.spanish_word:12} {'-':>5}  {time.monotonic() - started:7.1f}  "
+                  "FAILED (timeout or catalog error)", flush=True)
+            continue
+        seconds = time.monotonic() - started
+        books = len({book_key(item) for item in items})
+        flags = (("SLOW", seconds > SLOW_SECONDS), ("FEW BOOKS", books < FEW_BOOKS))
+        notes = ", ".join(note for note, flag in flags if flag)
+        print(f"{topic.key:12} {topic.spanish_word:12} {books:5d}  {seconds:7.1f}  {notes}", flush=True)
+    return 0
+
+
+def run_spanish(recorder, topics, level):
+    request = Request(grade=TEST_PROFILE.grade, levels={"Spanish": level}, interests=english_phrase(topics),
+                      spanish_words=spanish_words(topics))
+    print(f"Profile: grade {request.grade}, Spanish level {level}, topics {', '.join(topics)} "
+          f"(searching {', '.join(request.spanish_words)})\n")
     try:
         result = find_spanish_books(request, recorder, search=timed_search,
                                     progress=lambda message: print(message))
@@ -185,9 +220,12 @@ def main():
     parser.add_argument("--title", help="skip Haiku: look up this one book (needs --author)")
     parser.add_argument("--author", help="skip Haiku: author for --title, e.g. \"Bill Martin Jr.\"")
     parser.add_argument("--spanish", action="store_true",
-                        help="run the catalog-first Spanish flow (2 Haiku calls, 1-2 catalog searches)")
-    parser.add_argument("--interests", default=TEST_PROFILE.interests,
-                        help="with --spanish: the child's interests (default: %(default)s)")
+                        help="run the catalog-first Spanish flow (1 Haiku call, 1-2 catalog searches)")
+    parser.add_argument("--topics", nargs="+", choices=[t.key for t in TOPICS], metavar="TOPIC", default=None,
+                        help=f"with --spanish: up to {MAX_TOPICS} topics (default: {' '.join(DEFAULT_TOPICS)}). "
+                             f"Choices: {', '.join(t.key for t in TOPICS)}")
+    parser.add_argument("--topics-check", action="store_true",
+                        help="search the real catalog for each topic's Spanish word (no API key needed)")
     parser.add_argument("--spanish-level", type=float, default=TEST_PROFILE.levels["Spanish"],
                         help="with --spanish: Spanish reading level as a grade equivalent (default: %(default)s)")
     args = parser.parse_args()
@@ -195,15 +233,21 @@ def main():
         parser.error("--all only works together with --check")
     if bool(args.title) != bool(args.author):
         parser.error("--title and --author go together")
-    if args.title and (args.check or args.all or args.spanish):
-        parser.error("--title/--author can't be combined with --check, --all or --spanish")
+    if args.title and (args.check or args.all or args.spanish or args.topics_check):
+        parser.error("--title/--author can't be combined with --check, --all, --spanish or --topics-check")
     if args.spanish and (args.check or args.all):
         parser.error("--spanish can't be combined with --check or --all")
-    if not args.spanish and (args.interests != TEST_PROFILE.interests
-                             or args.spanish_level != TEST_PROFILE.levels["Spanish"]):
-        parser.error("--interests and --spanish-level only work with --spanish")
+    if args.topics_check and (args.check or args.all or args.spanish):
+        parser.error("--topics-check runs on its own")
+    if not args.spanish and (args.topics is not None or args.spanish_level != TEST_PROFILE.levels["Spanish"]):
+        parser.error("--topics and --spanish-level only work with --spanish")
+    topics = args.topics or DEFAULT_TOPICS
+    if len(set(topics)) != len(topics) or len(topics) > MAX_TOPICS:
+        parser.error(f"--topics takes 1 or {MAX_TOPICS} different topics")
     if args.title:
         return check_one(args.title, args.author)
+    if args.topics_check:
+        return run_topics_check()
 
     try:
         with open(SECRETS, "rb") as f:
@@ -217,7 +261,7 @@ def main():
         return 1
 
     if args.spanish:
-        return run_spanish(recorder, args.interests, args.spanish_level)
+        return run_spanish(recorder, topics, args.spanish_level)
 
     try:
         candidates = suggest_books(TEST_PROFILE, recorder)

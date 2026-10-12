@@ -7,8 +7,7 @@ import finder
 import suggest
 from finder import CATALOG_DOWN, CATALOG_STOPPED, NO_RESULTS
 from lookup import CatalogUnavailable
-from test_finder import (FakeClient, catalog_book, lookup_by_title, picks, spanish_search, suggestions,
-                         tool_reply, words)
+from test_finder import FakeClient, catalog_book, lookup_by_title, picks, spanish_search, suggestions, tool_reply
 
 APP = str(Path(__file__).parent.parent / "app.py")
 
@@ -38,14 +37,14 @@ def page_text(at):
     return "\n".join(texts(at.markdown))
 
 
-def fill(at, language="English", grade="1", levels=None, interests="dragons"):
+def fill(at, language="English", grade="1", levels=None, topics=("dragons",)):
     levels = levels or {"English": 1.5, "Spanish": 3.0}
     at.radio[0].set_value(language).run()
     at.selectbox[0].set_value(grade).run()
     wanted = ("English", "Spanish") if language == "Both" else (language,)
     for lang in wanted:
         at.number_input(key=f"level_{lang}").set_value(levels[lang]).run()
-    at.text_input[0].set_value(interests).run()
+    at.pills[0].set_value(list(topics)).run()
     return at
 
 
@@ -60,14 +59,30 @@ def search(at):
 def test_page_shows_the_hints_and_the_estimate_note():
     captions = texts(start().caption)
     assert "Check your child's Star report for Grade Equiv." in captions
-    assert "Don't enter your child's name." in captions
     assert "Reading levels are estimates." in captions
 
 
-def test_interests_box_has_example_placeholder_and_a_200_character_limit():
-    box = start().text_input[0]
-    assert box.placeholder == "e.g. dragons, soccer, animals"
-    assert box.max_chars == 200
+def test_topics_are_a_picker_of_fourteen_with_nothing_chosen_to_start():
+    at = start()
+    assert len(at.pills) == 1 and len(at.text_input) == 0       # the free-text box is gone
+    assert at.pills[0].label == "What does your child like? Pick 1 or 2."
+    assert at.pills[0].options == ["Dragons", "Soccer", "Dinosaurs", "Animals", "Trucks", "Unicorns", "Fairies",
+                                   "Space", "Ocean", "Princesses", "Robots", "Bugs", "Monsters", "Funny"]
+    assert at.pills[0].value == []
+
+
+def test_picking_three_topics_shows_a_red_note_and_an_error_on_submit(monkeypatch):
+    client = FakeClient()
+    use_client(monkeypatch, client)
+    at = fill(start(), topics=("dragons", "soccer", "space"))
+    assert ":red[Please pick up to 2 topics.]" in texts(at.caption)
+    assert "Please pick up to 2 topics." in texts(search(at).error)
+    assert client.calls == []
+
+
+def test_picking_two_topics_shows_no_note():
+    at = fill(start(), topics=("dragons", "soccer"))
+    assert not any("Please pick up to" in c for c in texts(at.caption))
 
 
 def test_english_is_the_default_and_shows_only_the_english_level():
@@ -95,7 +110,7 @@ def test_submitting_an_empty_form_lists_what_is_missing_and_searches_nothing(mon
     messages = texts(at.error)
     assert "Please choose your child's grade." in messages
     assert "Please enter the reading level in English." in messages
-    assert "Please tell us at least one thing your child likes." in messages
+    assert "Please pick at least one thing your child likes." in messages
     assert client.calls == []
 
 
@@ -105,7 +120,7 @@ def test_both_languages_need_both_levels(monkeypatch):
     at.radio[0].set_value("Both").run()
     at.selectbox[0].set_value("2").run()
     at.number_input(key="level_English").set_value(2.0).run()
-    at.text_input[0].set_value("dragons").run()
+    at.pills[0].set_value(["dragons"]).run()
     assert texts(search(at).error) == ["Please enter the reading level in Spanish."]
 
 
@@ -135,9 +150,11 @@ def test_both_badges_show_when_a_book_is_on_the_shelf_and_on_libby(monkeypatch):
 
 def test_spanish_search_shows_tidy_titles_and_authors_with_shelf_badge_only(monkeypatch):
     item = catalog_book(1, "Ven a la escuela, querido dragón = Come to school, dear dragon", "Hillert, Margaret, author.")
-    use_client(monkeypatch, FakeClient(words("dragones"), picks("B1")))
+    client = FakeClient(picks("B1"))
+    use_client(monkeypatch, client)
     monkeypatch.setattr(finder, "cached_spanish_search", spanish_search({"dragones": [item]}))
     text = page_text(search(fill(start(), language="Spanish")))
+    assert len(client.calls) == 1                       # Spanish needs one Haiku call, the pick
     assert "**Ven a la escuela, querido dragón** by Margaret Hillert" in text
     assert "Come to school" not in text
     assert ":green-badge[On the shelf]" in text and "Libby" not in text
@@ -145,10 +162,12 @@ def test_spanish_search_shows_tidy_titles_and_authors_with_shelf_badge_only(monk
 
 
 def test_both_languages_show_a_mix(monkeypatch):
-    use_client(monkeypatch, FakeClient(words("dragones"), picks("B1"), suggestions("Book 0")))
+    client = FakeClient(picks("B1"), suggestions("Book 0"))
+    use_client(monkeypatch, client)
     monkeypatch.setattr(finder, "cached_spanish_search", spanish_search({"dragones": [catalog_book(1, "Libro 1")]}))
     monkeypatch.setattr(finder, "cached_lookup", lookup_by_title({"Book 0"}))
     text = page_text(search(fill(start(), language="Both")))
+    assert len(client.calls) == 2                       # "both" needs two: the pick and the English suggestions
     assert text.index("Book 0") < text.index("Libro 1")
     assert "English ·" in text and "Spanish ·" in text
 
@@ -182,11 +201,32 @@ def test_titles_with_markdown_characters_are_escaped(monkeypatch):
     assert r"**Dragons \*love\* \$5 \[tacos\]**" in page_text(search(fill(start())))
 
 
-# --- gibberish and no results: a friendly note, not an error ---
+def test_spanish_searches_use_the_chosen_topics_fixed_words_in_the_order_picked(monkeypatch):
+    seen = []
 
-def test_gibberish_interests_get_a_friendly_message_and_a_library_link(monkeypatch):
+    def record(word):
+        seen.append(word)
+        return [catalog_book(len(seen), f"Libro {word}")]
+
+    use_client(monkeypatch, FakeClient(picks("B1")))
+    monkeypatch.setattr(finder, "cached_spanish_search", record)
+    search(fill(start(), language="Spanish", topics=("soccer", "animals")))
+    assert seen == ["fútbol", "animal"]
+
+
+def test_english_hands_haiku_the_topic_names(monkeypatch):
+    client = FakeClient(suggestions("A"))
+    use_client(monkeypatch, client)
+    monkeypatch.setattr(finder, "cached_lookup", lookup_by_title({"A"}))
+    search(fill(start(), topics=("dragons", "soccer")))
+    assert "<interests>dragons and soccer</interests>" in client.calls[0]["messages"][0]["content"]
+
+
+# --- no results: a friendly note, not an error ---
+
+def test_nothing_to_suggest_gets_a_friendly_message_and_a_library_link(monkeypatch):
     use_client(monkeypatch, FakeClient(tool_reply(suggest.TOOL_NAME, {"books": []})))
-    at = search(fill(start(), interests="asdf qwerty zxcv"))
+    at = search(fill(start()))
     assert texts(at.info) == [NO_RESULTS]
     assert NO_RESULTS == "We couldn't find books for that. Try simple topics like dragons or soccer."
     assert not at.error and not at.warning
@@ -200,17 +240,13 @@ def test_books_suggested_but_none_in_the_library_is_also_the_friendly_message(mo
     assert texts(at.info) == [NO_RESULTS] and not at.error
 
 
-def test_spanish_gibberish_with_no_search_words_is_the_friendly_message(monkeypatch):
-    use_client(monkeypatch, FakeClient(words()))
-    at = search(fill(start(), language="Spanish", interests="asdf qwerty"))
-    assert texts(at.info) == [NO_RESULTS] and not at.error
-
-
 def test_spanish_words_with_no_catalog_hits_is_the_friendly_message(monkeypatch):
-    use_client(monkeypatch, FakeClient(words("zxcvb")))
-    monkeypatch.setattr(finder, "cached_spanish_search", spanish_search({"zxcvb": []}))
-    at = search(fill(start(), language="Spanish", interests="zxcvb"))
+    client = FakeClient()
+    use_client(monkeypatch, client)
+    monkeypatch.setattr(finder, "cached_spanish_search", spanish_search({"dragones": []}))
+    at = search(fill(start(), language="Spanish"))
     assert texts(at.info) == [NO_RESULTS] and not at.error
+    assert client.calls == []                          # nothing to choose from, so no Haiku call
 
 
 # --- real failures are errors, in plain words ---
@@ -250,6 +286,6 @@ def test_unexpected_errors_show_a_plain_message_and_never_the_input(monkeypatch)
         raise RuntimeError("secretword in the traceback")
 
     monkeypatch.setattr(finder, "cached_lookup", boom)
-    at = search(fill(start(), interests="secretword"))
+    at = search(fill(start()))
     assert texts(at.error) == ["Something went wrong. Please try again."]
     assert "secretword" not in " ".join(texts(at.error)) and not at.exception

@@ -1,5 +1,6 @@
-"""Check what the parent typed in the form and turn it into a Request."""
-from suggest import MAX_INTERESTS_CHARS, Request
+"""Check what the parent chose in the form and turn it into a Request."""
+from suggest import Request
+from topics import BY_KEY, MAX_TOPICS, english_phrase, spanish_words
 
 GRADES = ("K", "1", "2", "3", "4", "5")
 LANGUAGE_CHOICES = {
@@ -10,11 +11,12 @@ LANGUAGE_CHOICES = {
 LEVEL_MIN, LEVEL_MAX = 0.0, 12.9  # the range of a Star Grade Equivalent
 
 
-def validate_form(grade, language_choice, levels, interests):
+def validate_form(grade, language_choice, levels, topics):
     """Return (Request, []) when the form is complete, or (None, [messages]).
 
     `levels` maps each language to the number the parent typed (or None).
     Only the selected languages' levels go into the Request.
+    `topics` is the list of chosen topic keys, e.g. ["dragons", "soccer"].
     """
     errors = []
     if grade not in GRADES:
@@ -35,12 +37,16 @@ def validate_form(grade, language_choice, levels, interests):
         else:
             chosen_levels[language] = float(level)
 
-    text = " ".join((interests or "").split())
-    if not text:
-        errors.append("Please tell us at least one thing your child likes.")
-    elif len(text) > MAX_INTERESTS_CHARS:
-        errors.append(f"Please keep the interests under {MAX_INTERESTS_CHARS} characters.")
+    chosen_topics = list(topics or [])
+    if not chosen_topics:
+        errors.append("Please pick at least one thing your child likes.")
+    elif len(chosen_topics) > MAX_TOPICS:
+        errors.append(f"Please pick up to {MAX_TOPICS} topics.")
+    elif len(set(chosen_topics)) != len(chosen_topics) or any(
+            not isinstance(key, str) or key not in BY_KEY for key in chosen_topics):
+        errors.append("Please pick from the topics shown.")
 
     if errors:
         return None, errors
-    return Request(grade=grade, levels=chosen_levels, interests=text), []
+    return Request(grade=grade, levels=chosen_levels, interests=english_phrase(chosen_topics),
+                   spanish_words=spanish_words(chosen_topics)), []

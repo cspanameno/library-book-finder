@@ -42,7 +42,7 @@ class FindResult:
 
 def _only(request, language):
     """The same request, for one language."""
-    return Request(request.grade, {language: request.levels[language]}, request.interests)
+    return Request(request.grade, {language: request.levels[language]}, request.interests, request.spanish_words)
 
 
 def _spanish_books(request, client, spanish_search, progress):

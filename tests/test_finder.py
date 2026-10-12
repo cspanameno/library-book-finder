@@ -35,10 +35,6 @@ def suggestions(*titles, language="English"):
     return tool_reply(suggest.TOOL_NAME, {"books": books})
 
 
-def words(*w):
-    return tool_reply(spanish.WORDS_TOOL_NAME, {"words": list(w)})
-
-
 def picks(*ids):
     return tool_reply(spanish.PICK_TOOL_NAME, {"picks": [{"id": i, "reason": f"Pick {i}.", "estimated_level": "2.5"} for i in ids]})
 
@@ -70,8 +66,8 @@ def lookup_by_title(found_titles, down_after=None):
 
 
 EN = Request("1", {"English": 1.5}, "dragons")
-ES = Request("1", {"Spanish": 3.0}, "dragons")
-BOTH = Request("1", {"English": 1.5, "Spanish": 3.0}, "dragons")
+ES = Request("1", {"Spanish": 3.0}, "dragons", ("dragones",))
+BOTH = Request("1", {"English": 1.5, "Spanish": 3.0}, "dragons", ("dragones",))
 
 
 # --- English only ---
@@ -164,7 +160,7 @@ def test_english_haiku_trouble_raises_a_suggestion_error():
 
 def test_spanish_books_are_tidied_for_display_and_marked_on_the_shelf():
     item = catalog_book(1, "Ven a la escuela, querido dragón = Come to school, dear dragon", "Hillert, Margaret, author.")
-    client = FakeClient(words("dragones"), picks("B1"))
+    client = FakeClient(picks("B1"))
     result = find_books(ES, client, spanish_search=spanish_search({"dragones": [item]}))
     (book,) = result.books
     assert book.title == "Ven a la escuela, querido dragón"
@@ -176,25 +172,27 @@ def test_spanish_books_are_tidied_for_display_and_marked_on_the_shelf():
 
 
 def test_spanish_request_to_haiku_mentions_only_the_spanish_level():
-    client = FakeClient(words("dragones"), picks("B1"))
+    client = FakeClient(picks("B1"))
     find_books(ES, client, spanish_search=spanish_search({"dragones": [catalog_book(1)]}))
-    assert "Spanish reading level: grade equivalent 3.0" in client.calls[1]["messages"][0]["content"]
+    assert "Spanish reading level: grade equivalent 3.0" in client.calls[0]["messages"][0]["content"]
+    assert len(client.calls) == 1
 
 
 def test_spanish_shows_at_most_five():
-    client = FakeClient(words("dragones"), picks(*[f"B{i}" for i in range(1, 7)]))
+    client = FakeClient(picks(*[f"B{i}" for i in range(1, 7)]))
     result = find_books(ES, client, spanish_search=spanish_search({"dragones": [catalog_book(i) for i in range(1, 9)]}))
     assert len(result.books) == 5
 
 
 def test_spanish_nothing_found_in_the_catalog_is_an_empty_result_not_an_error():
-    client = FakeClient(words("zzzz"))
-    result = find_books(ES, client, spanish_search=spanish_search({"zzzz": []}))
-    assert result.books == () and len(client.calls) == 1
+    client = FakeClient()
+    request = Request("1", {"Spanish": 3.0}, "dragons", ("zzzz",))
+    result = find_books(request, client, spanish_search=spanish_search({"zzzz": []}))
+    assert result.books == () and client.calls == []
 
 
 def test_spanish_catalog_down_raises():
-    client = FakeClient(words("dragones"))
+    client = FakeClient()
     with pytest.raises(CatalogUnavailable):
         find_books(ES, client, spanish_search=spanish_search({"dragones": CatalogUnavailable("Timeout")}))
 
@@ -202,7 +200,7 @@ def test_spanish_catalog_down_raises():
 # --- both languages ---
 
 def both_client(spanish_ids, english_titles):
-    return FakeClient(words("dragones"), picks(*spanish_ids), suggestions(*english_titles))
+    return FakeClient(picks(*spanish_ids), suggestions(*english_titles))
 
 
 def test_both_alternates_english_and_spanish_three_and_two():
@@ -213,11 +211,11 @@ def test_both_alternates_english_and_spanish_three_and_two():
         ("English", "Book 0"), ("Spanish", "Libro 1"), ("English", "Book 1"), ("Spanish", "Libro 2"), ("English", "Book 2")]
 
 
-def test_both_runs_spanish_first_and_makes_three_haiku_calls():
+def test_both_runs_spanish_first_and_makes_two_haiku_calls():
     client = both_client(["B1"], ["Book 0"])
     find_books(BOTH, client, lookup=lookup_by_title({"Book 0"}),
                spanish_search=spanish_search({"dragones": [catalog_book(1)]}))
-    assert [c["tools"][0]["name"] for c in client.calls] == ["spanish_search_words", "pick_books", "suggest_books"]
+    assert [c["tools"][0]["name"] for c in client.calls] == ["pick_books", "suggest_books"]
 
 
 def test_both_asks_for_only_as_many_english_as_it_needs():
@@ -248,7 +246,7 @@ def test_both_never_pads_past_what_was_found():
 
 
 def test_both_with_the_spanish_side_down_still_shows_english_with_a_note():
-    client = FakeClient(words("dragones"), suggestions("Book 0", "Book 1"))
+    client = FakeClient(suggestions("Book 0", "Book 1"))
     result = find_books(BOTH, client, lookup=lookup_by_title({"Book 0", "Book 1"}),
                         spanish_search=spanish_search({"dragones": CatalogUnavailable("Timeout")}))
     assert [b.language for b in result.books] == ["English", "English"]
@@ -257,7 +255,7 @@ def test_both_with_the_spanish_side_down_still_shows_english_with_a_note():
 
 def test_both_with_the_english_side_failing_still_shows_spanish_with_a_note():
     bad = tool_reply(suggest.TOOL_NAME, {"books": [{"title": "x"}]})
-    client = FakeClient(words("dragones"), picks("B1"), bad, bad)
+    client = FakeClient(picks("B1"), bad, bad)
     result = find_books(BOTH, client, lookup=lookup_by_title(set()),
                         spanish_search=spanish_search({"dragones": [catalog_book(1)]}))
     assert [b.language for b in result.books] == ["Spanish"]
@@ -265,17 +263,17 @@ def test_both_with_the_english_side_failing_still_shows_spanish_with_a_note():
 
 
 def test_both_sides_failing_raises():
-    client = FakeClient(words("dragones"))
     bad = tool_reply(suggest.TOOL_NAME, {"books": [{"title": "x"}]})
-    client.queued += [bad, bad]
+    client = FakeClient(bad, bad)
     with pytest.raises(CatalogUnavailable):
         find_books(BOTH, client, lookup=lookup_by_title(set()),
                    spanish_search=spanish_search({"dragones": CatalogUnavailable("Timeout")}))
 
 
 def test_both_with_nothing_found_is_an_empty_result():
-    client = FakeClient(words("zzzz"), tool_reply(suggest.TOOL_NAME, {"books": []}))
-    result = find_books(BOTH, client, spanish_search=spanish_search({"zzzz": []}))
+    client = FakeClient(tool_reply(suggest.TOOL_NAME, {"books": []}))
+    request = Request("1", {"English": 1.5, "Spanish": 3.0}, "dragons", ("zzzz",))
+    result = find_books(request, client, spanish_search=spanish_search({"zzzz": []}))
     assert result.books == () and result.notices == ()
 
 
@@ -283,7 +281,7 @@ def test_each_side_gets_a_request_with_only_its_own_level():
     client = both_client(["B1"], ["Book 0"])
     find_books(BOTH, client, lookup=lookup_by_title({"Book 0"}),
                spanish_search=spanish_search({"dragones": [catalog_book(1)]}))
-    spanish_prompt = client.calls[1]["messages"][0]["content"]
-    english_prompt = client.calls[2]["messages"][0]["content"]
+    spanish_prompt = client.calls[0]["messages"][0]["content"]
+    english_prompt = client.calls[1]["messages"][0]["content"]
     assert "Spanish reading level: grade equivalent 3.0" in spanish_prompt and "1.5" not in spanish_prompt
     assert "Reading level in English: grade equivalent 1.5" in english_prompt and "Spanish" not in english_prompt

@@ -82,7 +82,8 @@ class Candidate:
 class Request:
     grade: str  # "K", "1" ... "5"
     levels: dict  # language -> grade equivalent, e.g. {"English": 2.0}
-    interests: str
+    interests: str  # the chosen topics in English, e.g. "dragons and soccer"
+    spanish_words: tuple = ()  # the topics' fixed Spanish catalog search words
 
 
 def api_key_from(secrets):
