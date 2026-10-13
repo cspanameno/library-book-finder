@@ -131,11 +131,11 @@ def test_english_search_shows_books_with_reason_badge_level_and_link(monkeypatch
     monkeypatch.setattr(finder, "cached_lookup", lookup_by_title({"Dragons Love Tacos", "Wild Robot"}))
     at = search(fill(start()))
     text = page_text(at)
-    assert "**Dragons Love Tacos** by Writer0 Lastname0" in text
-    assert "**Wild Robot** by Writer1 Lastname1" in text
+    assert "### Dragons Love Tacos" in text and "by Writer0 Lastname0" in text
+    assert "### Wild Robot" in text and "by Writer1 Lastname1" in text
     assert ":green-badge[On the shelf]" in text
     assert "English · Estimated level: grade 2.0" in text
-    assert "[Find it at the library](https://library/search?Dragons Love Tacos)" in text
+    assert "[Find Dragons Love Tacos at the library](https://library/search?Dragons Love Tacos)" in text
     assert not at.error
     assert texts(at.caption)[-1] == "Reading levels are estimates."
 
@@ -155,7 +155,9 @@ def test_spanish_search_shows_tidy_titles_and_authors_with_shelf_badge_only(monk
     monkeypatch.setattr(finder, "cached_spanish_search", spanish_search({"dragones": [item]}))
     text = page_text(search(fill(start(), language="Spanish")))
     assert len(client.calls) == 1                       # Spanish needs one Haiku call, the pick
-    assert "**Ven a la escuela, querido dragón** by Margaret Hillert" in text
+    assert '### <span lang="es">Ven a la escuela, querido dragón</span>' in text
+    assert 'by <span lang="es">Margaret Hillert</span>' in text
+    assert '[Find <span lang="es">Ven a la escuela, querido dragón</span> at the library]' in text
     assert "Come to school" not in text
     assert ":green-badge[On the shelf]" in text and "Libby" not in text
     assert "Spanish · Estimated level: grade 2.5" in text
@@ -177,7 +179,7 @@ def test_fewer_than_five_says_how_many_were_found_without_padding(monkeypatch):
     monkeypatch.setattr(finder, "cached_lookup", lookup_by_title({"A", "B"}))
     at = search(fill(start()))
     assert "We found 2 books at the library that fit." in texts(at.caption)
-    assert page_text(at).count("Find it at the library") == 2
+    assert page_text(at).count("at the library](") == 2
 
 
 def test_one_book_found_uses_the_singular(monkeypatch):
@@ -191,14 +193,35 @@ def test_five_books_have_no_count_note(monkeypatch):
     use_client(monkeypatch, FakeClient(suggestions(*titles)))
     monkeypatch.setattr(finder, "cached_lookup", lookup_by_title(set(titles)))
     at = search(fill(start()))
-    assert page_text(at).count("Find it at the library") == 5
+    assert page_text(at).count("at the library](") == 5
     assert not any(c.startswith("We found") for c in texts(at.caption))
 
 
 def test_titles_with_markdown_characters_are_escaped(monkeypatch):
     use_client(monkeypatch, FakeClient(suggestions("Dragons *love* $5 [tacos]")))
     monkeypatch.setattr(finder, "cached_lookup", lookup_by_title({"Dragons *love* $5 [tacos]"}))
-    assert r"**Dragons \*love\* \$5 \[tacos\]**" in page_text(search(fill(start())))
+    assert r"### Dragons \*love\* \$5 \[tacos\]" in page_text(search(fill(start())))
+
+
+def test_english_books_are_not_marked_as_spanish(monkeypatch):
+    use_client(monkeypatch, FakeClient(suggestions("A")))
+    monkeypatch.setattr(finder, "cached_lookup", lookup_by_title({"A"}))
+    assert 'lang="es"' not in page_text(search(fill(start())))
+
+
+def test_a_script_tag_in_a_spanish_title_comes_out_escaped(monkeypatch):
+    evil = "<script>alert(1)</script>"
+    item = catalog_book(1, evil, "Hillert, <b>Margaret</b>, author.")
+    use_client(monkeypatch, FakeClient(picks("B1")))
+    monkeypatch.setattr(finder, "cached_spanish_search", spanish_search({"dragones": [item]}))
+    text = page_text(search(fill(start(), language="Spanish")))
+    assert "<script" not in text and "</script" not in text
+    assert "<b>" not in text
+    assert '<span lang="es">&lt;script&gt;' in text
+
+
+def test_the_page_has_a_title(monkeypatch):
+    assert Path(APP).read_text().count('page_title="Library Book Finder"') == 1
 
 
 def test_spanish_searches_use_the_chosen_topics_fixed_words_in_the_order_picked(monkeypatch):
@@ -263,7 +286,7 @@ def test_catalog_stopping_midway_keeps_the_books_found_and_adds_a_note(monkeypat
     monkeypatch.setattr(finder, "cached_lookup", lookup_by_title({"A", "B", "C"}, down_after=1))
     at = search(fill(start()))
     assert texts(at.info) == [CATALOG_STOPPED]
-    assert "**A** by" in page_text(at) and not at.error
+    assert "### A" in page_text(at) and not at.error
 
 
 def test_bad_answers_from_haiku_show_the_friendly_error(monkeypatch):

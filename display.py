@@ -1,6 +1,7 @@
 """Tidy catalog text for parents. The catalog files records the way a card
 catalog did ("Rubin, Adam, 1983- author." and "Title = Parallel title"); parents
 expect "Adam Rubin" and just the title."""
+import html
 import re
 
 SUFFIXES = {"jr", "sr", "ii", "iii", "iv"}
@@ -61,6 +62,16 @@ def md_escape(text):
     """Make text safe to show inside Streamlit markdown (titles and reasons come
     from Claude and the catalog, and may contain * _ [ ] $ and the like)."""
     return re.sub(r"([\\`*_{}\[\]<>()#+!|~$:])", r"\\\1", text)
+
+
+def safe_text(text, lang=None):
+    """Catalog and Claude text, safe to put in Streamlit markdown that allows HTML.
+
+    HTML-escaped first (so "<script>" shows as text), then markdown-escaped.
+    With lang, wrapped in a span so screen readers use that language's voice.
+    """
+    escaped = md_escape(html.escape(text, quote=False))
+    return f'<span lang="{lang}">{escaped}</span>' if lang else escaped
 
 
 def level_text(level):

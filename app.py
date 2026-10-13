@@ -2,7 +2,7 @@ import logging
 
 import streamlit as st
 
-from display import level_text, md_escape
+from display import level_text, md_escape, safe_text
 from finder import CATALOG_DOWN, NO_RESULTS, find_books
 from form import GRADES, LANGUAGE_CHOICES, validate_form
 from lookup import CatalogUnavailable
@@ -10,13 +10,17 @@ from suggest import MissingApiKey, SuggestionError, api_key_from, make_client
 from theme import apply_background
 from topics import BY_KEY, MAX_TOPICS, TOPICS
 
+LANGUAGE_CODES = {"Spanish": "es"}  # English is the page language, so it needs no marker
 LIBRARY_CATALOG = "https://sanle.ent.sirsi.net/client/en_US/default/"
 SOMETHING_WENT_WRONG = "Something went wrong. Please try again."
 
 
 def show_book(book):
-    st.markdown(f"**{md_escape(book.title)}** by {md_escape(book.author)}")
-    st.write(book.reason)
+    lang = LANGUAGE_CODES.get(book.language)
+    # Catalog and Claude text is untrusted: safe_text HTML-escapes it before it is wrapped.
+    st.markdown(f"### {safe_text(book.title, lang)}", unsafe_allow_html=True)
+    st.markdown(f"by {safe_text(book.author, lang)}", unsafe_allow_html=True)
+    st.markdown(safe_text(book.reason, lang), unsafe_allow_html=True)
     badges = []
     if book.on_shelf:
         badges.append(":green-badge[On the shelf]")
@@ -26,7 +30,7 @@ def show_book(book):
     if book.estimated_level:
         details += f" · Estimated level: {md_escape(level_text(book.estimated_level))}"
     st.markdown(" ".join(badges) + "  \n" + details)
-    st.markdown(f"[Find it at the library]({book.search_url})")
+    st.markdown(f"[Find {safe_text(book.title, lang)} at the library]({book.search_url})", unsafe_allow_html=True)
 
 
 def show_results(request):
@@ -68,6 +72,7 @@ def show_results(request):
         st.caption(f"We found {count} book{'s' if count != 1 else ''} at the library that fit.")
 
 
+st.set_page_config(page_title="Library Book Finder")
 apply_background()
 
 st.title("Library Book Finder")

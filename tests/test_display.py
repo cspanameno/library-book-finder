@@ -86,3 +86,14 @@ def test_md_escape(raw, escaped):
 ])
 def test_level_text(level, shown):
     assert level_text(level) == shown
+
+
+def test_safe_text_escapes_html_before_wrapping():
+    from display import safe_text
+    assert safe_text("<script>x</script>", "es") == '<span lang="es">&lt;script&gt;x&lt;/script&gt;</span>'
+    assert safe_text('"><img src=x onerror=y>', "es") == '<span lang="es">"&gt;&lt;img src=x onerror=y&gt;</span>'
+
+
+def test_safe_text_still_escapes_markdown_and_skips_the_span_without_a_language():
+    from display import safe_text
+    assert safe_text("A *b* & c") == r"A \*b\* &amp; c"
