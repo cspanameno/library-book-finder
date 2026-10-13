@@ -3,6 +3,7 @@
 Only the catalog feed decides what the library has. One request per book, a
 pause between live requests, and results cached for 24 hours.
 """
+import threading
 import time
 from dataclasses import dataclass
 from urllib.parse import quote_plus
@@ -23,6 +24,9 @@ CACHE_TTL_SECONDS = 24 * 60 * 60
 USER_AGENT = "library-book-finder (personal project)"
 
 _last_request_at = None
+# Streamlit runs each parent's session in its own thread; one lock keeps
+# catalog requests to one at a time across all of them.
+_request_lock = threading.Lock()
 
 
 class CatalogUnavailable(Exception):
@@ -76,14 +80,22 @@ def _wait_for_turn():
 
 
 def _get(url, timeout):
-    """One live request to the catalog. No retry. Shared politeness delay."""
-    _wait_for_turn()
-    try:
-        response = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=timeout)
-        response.raise_for_status()
-    except requests.RequestException as err:
-        # Don't include the URL: it contains what we searched for.
-        raise CatalogUnavailable(type(err).__name__) from None
+    """One live request to the catalog. No retry. Shared politeness delay.
+
+    The lock covers the wait and the request, so only one request is in flight
+    across all sessions, and the gap is measured from the end of the last one.
+    """
+    global _last_request_at
+    with _request_lock:
+        _wait_for_turn()
+        try:
+            response = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=timeout)
+            response.raise_for_status()
+        except requests.RequestException as err:
+            # Don't include the URL: it contains what we searched for.
+            raise CatalogUnavailable(type(err).__name__) from None
+        finally:
+            _last_request_at = time.monotonic()
     return response.content.decode("utf-8", errors="replace")
 
 

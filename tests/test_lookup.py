@@ -1,3 +1,5 @@
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -142,6 +144,43 @@ def test_pause_between_live_requests(monkeypatch):
     lookup._wait_for_turn()          # long enough ago: no wait
 
     assert sleeps == [pytest.approx(0.75)]
+
+
+def test_two_threads_calling_get_at_once_still_wait_their_turn(monkeypatch):
+    gap = 0.2
+    monkeypatch.setattr(lookup, "MIN_SECONDS_BETWEEN_REQUESTS", gap)
+    monkeypatch.setattr(lookup, "_last_request_at", None)
+    spans = []  # (start, end) of each fake request
+
+    class FakeResponse:
+        content = b"<feed/>"
+
+        def raise_for_status(self):
+            pass
+
+    def fake_get(url, headers, timeout):
+        start = time.monotonic()
+        time.sleep(0.05)  # long enough for an unlocked second thread to overlap
+        spans.append((start, time.monotonic()))
+        return FakeResponse()
+
+    monkeypatch.setattr(lookup.requests, "get", fake_get)
+
+    barrier = threading.Barrier(2)
+
+    def worker():
+        barrier.wait()
+        lookup._get("https://example.test/feed", 10)
+
+    threads = [threading.Thread(target=worker) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=10)
+
+    assert len(spans) == 2
+    first, second = sorted(spans)
+    assert second[0] >= first[1] + gap - 0.02  # no overlap, and a full gap after the first ended
 
 
 # --- caching ---
