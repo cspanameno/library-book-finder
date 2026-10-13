@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./.streamlit/secrets.toml)",
+      "Read(./.streamlit/secrets*)",
+      "Grep(./.streamlit/secrets.toml)",
+      "Grep(./.streamlit/secrets*)"
+    ]
+  }
+}
