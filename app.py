@@ -20,7 +20,8 @@ def show_book(book):
     # Catalog and Claude text is untrusted: safe_text HTML-escapes it before it is wrapped.
     st.markdown(f"### {safe_text(book.title, lang)}", unsafe_allow_html=True)
     st.markdown(f"by {safe_text(book.author, lang)}", unsafe_allow_html=True)
-    st.markdown(safe_text(book.reason, lang), unsafe_allow_html=True)
+    # Haiku writes reasons in English, so they get no lang marker even for Spanish books.
+    st.markdown(safe_text(book.reason), unsafe_allow_html=True)
     badges = []
     if book.on_shelf:
         badges.append(":green-badge[On the shelf]")

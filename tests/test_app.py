@@ -209,6 +209,16 @@ def test_english_books_are_not_marked_as_spanish(monkeypatch):
     assert 'lang="es"' not in page_text(search(fill(start())))
 
 
+def test_spanish_books_reasons_carry_no_lang_attribute(monkeypatch):
+    item = catalog_book(1, "Ven a la escuela, querido dragón", "Hillert, Margaret, author.")
+    use_client(monkeypatch, FakeClient(picks("B1")))
+    monkeypatch.setattr(finder, "cached_spanish_search", spanish_search({"dragones": [item]}))
+    text = page_text(search(fill(start(), language="Spanish")))
+    assert 'lang="es"' in text                           # titles and authors are still marked
+    assert "\nPick B1.\n" in text                        # the reason, plain
+    assert "Pick B1.</span>" not in text and ">Pick B1." not in text
+
+
 def test_a_script_tag_in_a_spanish_title_comes_out_escaped(monkeypatch):
     evil = "<script>alert(1)</script>"
     item = catalog_book(1, evil, "Hillert, <b>Margaret</b>, author.")
